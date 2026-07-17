@@ -28,6 +28,11 @@ export type EgressCredentialProvider = (
   | Record<string, string>
   | undefined;
 
+export const resolvePublicDns: EgressResolver = async (hostname) =>
+  (await lookup(hostname, { all: true, verbatim: true })).map(
+    ({ address }) => address,
+  );
+
 export class EgressDeniedError extends Error {
   constructor(message: string) {
     super(message);
@@ -227,3 +232,122 @@ export const createEgressFetch =
     }
     throw new EgressDeniedError("Redirect limit exceeded");
   };
+
+const headersFromRaw = (rawHeaders: string[]) => {
+  const headers = new Headers();
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const name = rawHeaders[index];
+    const value = rawHeaders[index + 1];
+    if (name !== undefined && value !== undefined) headers.append(name, value);
+  }
+
+  return headers;
+};
+
+const pinnedRequest = async (
+  request: Request,
+  hostname: string,
+  address: string,
+  maxResponseBytes: number,
+  requestImpl: typeof httpsRequest,
+) => {
+  const body =
+    request.method === "GET" || request.method === "HEAD"
+      ? undefined
+      : Buffer.from(await request.arrayBuffer());
+
+  return new Promise<Response>((resolve, reject) => {
+    const outgoing = requestImpl(
+      request.url,
+      {
+        agent: false,
+        headers: Object.fromEntries(request.headers),
+        lookup: (_name, _options, callback) => {
+          const family = isIP(address);
+          if (family !== 4 && family !== 6) {
+            callback(
+              new Error("Pinned destination is not an IP address"),
+              address,
+              4,
+            );
+            return;
+          }
+          callback(null, address, family);
+        },
+        method: request.method,
+        servername: hostname,
+      },
+      (incoming) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        incoming.on("data", (chunk: Buffer) => {
+          bytes += chunk.byteLength;
+          if (bytes > maxResponseBytes) {
+            incoming.destroy(
+              new EgressDeniedError("Response exceeds byte limit"),
+            );
+            return;
+          }
+          chunks.push(chunk);
+        });
+        incoming.once("error", reject);
+        incoming.once("end", () => {
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              headers: headersFromRaw(incoming.rawHeaders),
+              status: incoming.statusCode ?? 502,
+              statusText: incoming.statusMessage,
+            }),
+          );
+        });
+      },
+    );
+    const abort = () => outgoing.destroy(request.signal.reason);
+    if (request.signal.aborted) abort();
+    else request.signal.addEventListener("abort", abort, { once: true });
+    outgoing.once("close", () =>
+      request.signal.removeEventListener("abort", abort),
+    );
+    outgoing.once("error", reject);
+    if (body === undefined) outgoing.end();
+    else outgoing.end(body);
+  });
+};
+
+/**
+ * HTTPS transport that pins each authorized request to the exact public IPs
+ * returned by the policy resolver while retaining the original hostname for
+ * TLS SNI and certificate verification. It runs inside Bun through Bun's
+ * supported Node-compatibility HTTPS surface; it does not start Node or a
+ * child process.
+ */
+export const createPinnedHttpsTransport = (
+  options: {
+    maxResponseBytes?: number;
+    request?: typeof httpsRequest;
+  } = {},
+): EgressTransport => {
+  const maxResponseBytes = options.maxResponseBytes ?? 10 * 1024 * 1024;
+  const requestImpl = options.request ?? httpsRequest;
+
+  return async (request, decision) => {
+    let failure: unknown;
+    for (const address of decision.resolution.addresses) {
+      try {
+        return await pinnedRequest(
+          request.clone(),
+          decision.resolution.hostname,
+          address,
+          maxResponseBytes,
+          requestImpl,
+        );
+      } catch (error) {
+        failure = error;
+      }
+    }
+    throw failure ?? new EgressDeniedError("Destination did not resolve");
+  };
+};
+import { lookup } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";

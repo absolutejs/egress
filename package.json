@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/egress",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deny-by-default outbound network policy and credential-safe fetch for AI agents.",
   "type": "module",
   "license": "MIT",

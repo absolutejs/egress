@@ -9,6 +9,10 @@ The transport is required rather than defaulting to global `fetch`. A production
 transport must connect to one of `decision.resolution.addresses` while retaining
 the original hostname for TLS SNI and certificate verification. That closes the
 DNS-rebinding gap between policy resolution and the actual socket connection.
+`createPinnedHttpsTransport()` supplies that production transport. It runs
+inside Bun, pins the authorized address at connection time, preserves the
+original hostname for TLS, retries the other authorized addresses, and bounds
+bytes while reading the socket. It does not launch Node or a child process.
 
 ```ts
 const policy = createEgressPolicy({
@@ -18,7 +22,7 @@ const policy = createEgressPolicy({
 
 const agentFetch = createEgressFetch({
   policy,
-  transport: pinnedHttpsTransport,
+  transport: createPinnedHttpsTransport(),
   credentials: ({ url }) =>
     url.hostname === "api.stripe.com"
       ? { authorization: `Bearer ${stripeToken}` }

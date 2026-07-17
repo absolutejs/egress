@@ -1,11 +1,77 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { IncomingMessage } from "node:http";
+import type { request as httpsRequest, RequestOptions } from "node:https";
 import { describe, expect, test } from "bun:test";
 import {
   createEgressFetch,
   createEgressPolicy,
+  createPinnedHttpsTransport,
   EgressDeniedError,
   isPrivateNetworkAddress,
   type EgressTransport,
 } from "../src";
+
+test("pinned transport connects to an authorized address with original TLS identity", async () => {
+  let pinnedAddress = "";
+  let servername = "";
+  const request = ((
+    _url: string,
+    options: RequestOptions,
+    handle: (response: IncomingMessage) => void,
+  ) => {
+    servername = String(options.servername);
+    const outgoing = new EventEmitter() as EventEmitter & {
+      destroy: (error?: Error) => void;
+      end: (body?: unknown) => void;
+    };
+    outgoing.destroy = (error) => {
+      if (error) outgoing.emit("error", error);
+    };
+    outgoing.end = () => {
+      const pinnedLookup = options.lookup as (
+        hostname: string,
+        lookupOptions: object,
+        callback: (
+          error: Error | null,
+          address: string,
+          family: number,
+        ) => void,
+      ) => void;
+      pinnedLookup("api.example.com", {}, (error, address) => {
+        if (error) {
+          outgoing.emit("error", error);
+          return;
+        }
+        pinnedAddress = address;
+        const incoming = new PassThrough() as PassThrough & IncomingMessage;
+        Object.assign(incoming, {
+          rawHeaders: ["content-type", "text/plain"],
+          statusCode: 200,
+          statusMessage: "OK",
+        });
+        handle(incoming);
+        incoming.end("pinned");
+      });
+    };
+
+    return outgoing;
+  }) as unknown as typeof httpsRequest;
+  const transport = createPinnedHttpsTransport({ request });
+  const response = await transport(new Request("https://api.example.com/v1"), {
+    resolution: {
+      addresses: ["93.184.216.34"],
+      hostname: "api.example.com",
+      resolvedAt: 1,
+    },
+    rule: "api.example.com",
+    url: new URL("https://api.example.com/v1"),
+  });
+
+  expect(await response.text()).toBe("pinned");
+  expect(pinnedAddress).toBe("93.184.216.34");
+  expect(servername).toBe("api.example.com");
+});
 
 describe("egress policy", () => {
   test("blocks private, metadata, reserved, non-HTTPS, and non-allowlisted targets", async () => {
