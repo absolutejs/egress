@@ -5,6 +5,8 @@ exact HTTPS destination, resolves every address, rejects private/local/reserved
 networks, re-runs policy after every redirect, injects credentials only after
 authorization, bounds response size, and emits audit events.
 
+## DNS-rebinding-safe transport
+
 The transport is required rather than defaulting to global `fetch`. A production
 transport must connect to one of `decision.resolution.addresses` while retaining
 the original hostname for TLS SNI and certificate verification. That closes the
@@ -13,6 +15,8 @@ DNS-rebinding gap between policy resolution and the actual socket connection.
 inside Bun, pins the authorized address at connection time, preserves the
 original hostname for TLS, retries the other authorized addresses, and bounds
 bytes while reading the socket. It does not launch Node or a child process.
+
+## Quick start
 
 ```ts
 const policy = createEgressPolicy({
@@ -30,6 +34,8 @@ const agentFetch = createEgressFetch({
   audit: writeSecurityEvent,
 });
 ```
+
+## Credential isolation
 
 Caller-supplied `Authorization`, `Cookie`, `Host`, and `Proxy-Authorization`
 headers are always stripped. Credentials come only from the scoped provider and
