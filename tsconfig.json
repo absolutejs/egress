@@ -8,8 +8,16 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
-    "types": ["bun"]
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["src", "tests"],
-  "exclude": ["dist"]
+  "include": [
+    "src",
+    "tests",
+    "changelog/**/*"
+  ],
+  "exclude": [
+    "dist"
+  ]
 }

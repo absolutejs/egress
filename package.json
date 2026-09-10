@@ -28,22 +28,25 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "files": [
-    "dist",
+    "CHANGELOG.md",
+    "LICENSE",
     "README.md",
-    "LICENSE"
+    "changelog.json",
+    "dist"
   ],
   "scripts": {
     "format": "prettier --write \"./**/*.{ts,json,md}\"",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "build": "rm -rf dist && bun build src/index.ts src/manifest.ts --outdir dist --target=bun --external @sinclair/typebox && tsc -p tsconfig.build.json && absolute-manifest emit",
-    "check:package": "bun run format && bun run typecheck && bun run test && bun run build"
+    "check:package": "bun run format && bun run typecheck && bun run test && bun run build && absolute-changelog check"
   },
   "dependencies": {
-    "@absolutejs/manifest": "^0.2.0",
+    "@absolutejs/manifest": "^0.9.0",
     "@sinclair/typebox": "^0.34.0"
   },
   "devDependencies": {
+    "@absolutejs/changelog": "^0.1.2",
     "@types/bun": "^1.3.14",
     "prettier": "3.5.3",
     "typescript": "5.8.3"
