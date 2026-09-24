@@ -40,3 +40,5 @@ const agentFetch = createEgressFetch({
 Caller-supplied `Authorization`, `Cookie`, `Host`, and `Proxy-Authorization`
 headers are always stripped. Credentials come only from the scoped provider and
 are recomputed for each redirect destination.
+
+`@absolutejs/egress/transport` exposes conservative public-address classification and bounded DNS-pinned HTTP/HTTPS requests for packages such as RAG. This low-level API is not a policy engine: the caller owns hostname authorization, all-answer DNS validation, redirects, request limits and decompression. `createPinnedHttpsTransport` retains the existing allowlisted HTTPS egress contract.
