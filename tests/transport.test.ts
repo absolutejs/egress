@@ -39,6 +39,14 @@ test("HTTP transport pins DNS, bounds bytes and validates hostname before socket
         options.lookup("example.com", {}, (_err: unknown, address: string) =>
           expect(address).toBe("8.8.8.8"),
         );
+        options.lookup(
+          "example.com",
+          { all: true },
+          (error: unknown, addresses: unknown) => {
+            expect(error).toBeNull();
+            expect(addresses).toEqual([{ address: "8.8.8.8", family: 4 }]);
+          },
+        );
         const incoming = new EventEmitter() as any;
         incoming.rawHeaders = [];
         incoming.statusCode = 200;

@@ -72,8 +72,14 @@ export const pinnedPublicRequest = async (
         headers: Object.fromEntries(request.headers),
         method: request.method,
         servername: isIP(options.hostname) ? undefined : options.hostname,
-        lookup: (_name, _options, callback) =>
-          callback(null, options.address, isIP(options.address) as 4 | 6),
+        lookup: (_name, lookupOptions, callback) => {
+          const family = isIP(options.address) as 4 | 6;
+          // Node/Bun connection racing requests the all-addresses lookup form.
+          // Return only the already validated pin in either callback shape.
+          if (lookupOptions.all)
+            callback(null, [{ address: options.address, family }]);
+          else callback(null, options.address, family);
+        },
       },
       (incoming) => {
         const chunks: Buffer[] = [];
