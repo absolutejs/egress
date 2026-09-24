@@ -1,7 +1,10 @@
-import { defineManifest } from "@absolutejs/manifest";
+import { defineManifest, type PackageManifest } from "@absolutejs/manifest";
 import { Type } from "@sinclair/typebox";
 
-export const manifest = defineManifest<Record<string, never>>()({
+export const manifest: PackageManifest<
+  Record<string, never>,
+  never
+> = defineManifest<Record<string, never>>()({
   contract: 2,
   identity: {
     accent: "#ef4444",

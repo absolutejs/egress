@@ -1,5 +1,23 @@
 {
-	"contract": 1,
-	"name": "@absolutejs/egress",
-	"releases": []
+  "contract": 1,
+  "name": "@absolutejs/egress",
+  "releases": [
+    {
+      "changes": [
+        {
+          "kind": "added",
+          "summary": "Expose DNS-pinned public HTTP/HTTPS transport while preserving allowlisted HTTPS egress policy"
+        },
+        {
+          "kind": "changed",
+          "summary": "Explicitly preserve the public manifest contract instead of exposing dependency-inferred settings types",
+          "symbols": [
+            "manifest"
+          ]
+        }
+      ],
+      "date": "2026-09-24",
+      "version": "0.3.0"
+    }
+  ]
 }

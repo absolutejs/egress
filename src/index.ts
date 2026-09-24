@@ -1,3 +1,4 @@
+import { isPublicNetworkAddress, pinnedPublicRequest } from "./transport";
 export type EgressResolution = {
   addresses: string[];
   hostname: string;
@@ -50,36 +51,8 @@ const ipv4 = (address: string) => {
   return octets as [number, number, number, number];
 };
 
-export const isPrivateNetworkAddress = (address: string): boolean => {
-  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
-  const v4 = ipv4(value);
-  if (v4) {
-    const [a, b] = v4;
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 192 && b === 0) ||
-      (a === 198 && (b === 18 || b === 19 || b === 51)) ||
-      (a === 203 && b === 0) ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      a >= 224
-    );
-  }
-  return (
-    value === "::" ||
-    value === "::1" ||
-    value.startsWith("fc") ||
-    value.startsWith("fd") ||
-    /^fe[89ab]/.test(value) ||
-    value.startsWith("ff") ||
-    value.startsWith("2001:db8") ||
-    (value.startsWith("::ffff:") && isPrivateNetworkAddress(value.slice(7)))
-  );
-};
+export const isPrivateNetworkAddress = (address: string) =>
+  !isPublicNetworkAddress(address);
 
 const matchesHost = (hostname: string, rule: string) =>
   rule.startsWith("*.")
@@ -233,87 +206,6 @@ export const createEgressFetch =
     throw new EgressDeniedError("Redirect limit exceeded");
   };
 
-const headersFromRaw = (rawHeaders: string[]) => {
-  const headers = new Headers();
-  for (let index = 0; index < rawHeaders.length; index += 2) {
-    const name = rawHeaders[index];
-    const value = rawHeaders[index + 1];
-    if (name !== undefined && value !== undefined) headers.append(name, value);
-  }
-
-  return headers;
-};
-
-const pinnedRequest = async (
-  request: Request,
-  hostname: string,
-  address: string,
-  maxResponseBytes: number,
-  requestImpl: typeof httpsRequest,
-) => {
-  const body =
-    request.method === "GET" || request.method === "HEAD"
-      ? undefined
-      : Buffer.from(await request.arrayBuffer());
-
-  return new Promise<Response>((resolve, reject) => {
-    const outgoing = requestImpl(
-      request.url,
-      {
-        agent: false,
-        headers: Object.fromEntries(request.headers),
-        lookup: (_name, _options, callback) => {
-          const family = isIP(address);
-          if (family !== 4 && family !== 6) {
-            callback(
-              new Error("Pinned destination is not an IP address"),
-              address,
-              4,
-            );
-            return;
-          }
-          callback(null, address, family);
-        },
-        method: request.method,
-        servername: hostname,
-      },
-      (incoming) => {
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        incoming.on("data", (chunk: Buffer) => {
-          bytes += chunk.byteLength;
-          if (bytes > maxResponseBytes) {
-            incoming.destroy(
-              new EgressDeniedError("Response exceeds byte limit"),
-            );
-            return;
-          }
-          chunks.push(chunk);
-        });
-        incoming.once("error", reject);
-        incoming.once("end", () => {
-          resolve(
-            new Response(Buffer.concat(chunks), {
-              headers: headersFromRaw(incoming.rawHeaders),
-              status: incoming.statusCode ?? 502,
-              statusText: incoming.statusMessage,
-            }),
-          );
-        });
-      },
-    );
-    const abort = () => outgoing.destroy(request.signal.reason);
-    if (request.signal.aborted) abort();
-    else request.signal.addEventListener("abort", abort, { once: true });
-    outgoing.once("close", () =>
-      request.signal.removeEventListener("abort", abort),
-    );
-    outgoing.once("error", reject);
-    if (body === undefined) outgoing.end();
-    else outgoing.end(body);
-  });
-};
-
 /**
  * HTTPS transport that pins each authorized request to the exact public IPs
  * returned by the policy resolver while retaining the original hostname for
@@ -333,14 +225,14 @@ export const createPinnedHttpsTransport = (
   return async (request, decision) => {
     let failure: unknown;
     for (const address of decision.resolution.addresses) {
+      request.signal.throwIfAborted();
       try {
-        return await pinnedRequest(
-          request.clone(),
-          decision.resolution.hostname,
+        return await pinnedPublicRequest(request.clone(), {
+          hostname: decision.resolution.hostname,
           address,
           maxResponseBytes,
-          requestImpl,
-        );
+          request: requestImpl,
+        });
       } catch (error) {
         failure = error;
       }
@@ -350,4 +242,3 @@ export const createPinnedHttpsTransport = (
 };
 import { lookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
