@@ -6,6 +6,26 @@
 			"changes": [
 				{
 					"kind": "fixed",
+					"summary": "Accept legitimate larger HTTP response headers with an explicit configurable 64 KiB default and 1 MiB maximum, preserving DNS pinning, TLS verification and body limits.",
+					"symbols": [
+						"pinnedPublicRequest"
+					]
+				},
+				{
+					"kind": "added",
+					"summary": "Expose a stable response-body overflow error code for safe downstream diagnostics.",
+					"symbols": [
+						"pinnedPublicRequest"
+					]
+				}
+			],
+			"date": "2026-11-20",
+			"version": "0.3.2"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
 					"summary": "Honor the all-addresses DNS lookup callback used by Node and Bun connection racing while retaining the single validated public address pin.",
 					"symbols": [
 						"pinnedPublicRequest"

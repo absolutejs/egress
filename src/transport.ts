@@ -36,6 +36,8 @@ export const pinnedPublicRequest = async (
     hostname: string;
     address: string;
     maxResponseBytes: number;
+    /** Response headers are bounded independently of body bytes (default 64 KiB, maximum 1 MiB). */
+    maxResponseHeaderBytes?: number;
     request?: typeof httpsRequest;
   },
 ): Promise<Response> => {
@@ -58,6 +60,13 @@ export const pinnedPublicRequest = async (
     options.maxResponseBytes < 1
   )
     throw new Error("Positive response byte limit required");
+  const maxHeaderSize = options.maxResponseHeaderBytes ?? 65_536;
+  if (
+    !Number.isSafeInteger(maxHeaderSize) ||
+    maxHeaderSize < 1 ||
+    maxHeaderSize > 1_048_576
+  )
+    throw new Error("Response header limit must be between 1 byte and 1 MiB");
   const body =
     request.method === "GET" || request.method === "HEAD"
       ? undefined
@@ -69,6 +78,7 @@ export const pinnedPublicRequest = async (
       request.url,
       {
         agent: false,
+        maxHeaderSize,
         headers: Object.fromEntries(request.headers),
         method: request.method,
         servername: isIP(options.hostname) ? undefined : options.hostname,
@@ -88,7 +98,11 @@ export const pinnedPublicRequest = async (
         incoming.on("data", (chunk: Buffer) => {
           bytes += chunk.byteLength;
           if (bytes > options.maxResponseBytes) {
-            incoming.destroy(new Error("Response exceeds byte limit"));
+            incoming.destroy(
+              Object.assign(new Error("Response exceeds byte limit"), {
+                code: "ERR_RESPONSE_BODY_TOO_LARGE",
+              }),
+            );
             return;
           }
           chunks.push(chunk);

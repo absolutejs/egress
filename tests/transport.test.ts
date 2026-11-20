@@ -83,3 +83,79 @@ test("HTTP transport pins DNS, bounds bytes and validates hostname before socket
   ).rejects.toThrow("hostname");
   expect(calls).toBe(2);
 });
+
+test("response headers have an explicit bounded allowance and reject invalid limits before sockets", async () => {
+  let calls = 0;
+  const fake = ((_url: unknown, options: any) => {
+    calls++;
+    expect(options.maxHeaderSize).toBe(65_536);
+    expect(options.servername).toBe("example.com");
+    expect(options.rejectUnauthorized).not.toBe(false);
+    const outgoing = new EventEmitter() as any;
+    outgoing.end = () =>
+      queueMicrotask(() => {
+        outgoing.emit(
+          "error",
+          Object.assign(new Error("overflow"), { code: "HPE_HEADER_OVERFLOW" }),
+        );
+        outgoing.emit("close");
+      });
+    return outgoing;
+  }) as typeof request;
+  const options = {
+    hostname: "example.com",
+    address: "8.8.8.8",
+    maxResponseBytes: 100,
+    request: fake,
+  };
+  await expect(
+    pinnedPublicRequest(new Request("https://example.com"), options),
+  ).rejects.toMatchObject({ code: "HPE_HEADER_OVERFLOW" });
+  for (const maxResponseHeaderBytes of [0, -1, 1.5, Infinity, 1_048_577])
+    await expect(
+      pinnedPublicRequest(new Request("https://example.com"), {
+        ...options,
+        maxResponseHeaderBytes,
+      }),
+    ).rejects.toThrow("header limit");
+  expect(calls).toBe(1);
+});
+
+test("real HTTP parser accepts normal large headers and rejects responses over the configured cap", async () => {
+  const { createServer } = await import("node:http");
+  const { request: requestImpl } = await import("node:http");
+  const server = createServer((_req, res) => {
+    res.setHeader("x-fixture", "a".repeat(18_000));
+    res.end("readable evidence");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw Error("No test port");
+  const local = ((_url: unknown, options: any, callback: any) =>
+    requestImpl(
+      { ...options, hostname: "127.0.0.1", port: address.port, path: "/" },
+      callback,
+    )) as typeof request;
+  try {
+    const options = {
+      hostname: "example.com",
+      address: "8.8.8.8",
+      maxResponseBytes: 100,
+      request: local,
+    };
+    expect(
+      await (
+        await pinnedPublicRequest(new Request("http://example.com"), options)
+      ).text(),
+    ).toBe("readable evidence");
+    await expect(
+      pinnedPublicRequest(new Request("http://example.com"), {
+        ...options,
+        maxResponseHeaderBytes: 16384,
+      }),
+    ).rejects.toMatchObject({ code: "HPE_HEADER_OVERFLOW" });
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

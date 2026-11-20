@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/egress",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Deny-by-default outbound network policy and credential-safe fetch for AI agents.",
   "type": "module",
   "license": "MIT",
@@ -40,7 +40,7 @@
   ],
   "scripts": {
     "format": "prettier --write \"./**/*.{ts,json,md}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check",
     "test": "bun test",
     "build": "rm -rf dist && bun build src/index.ts src/transport.ts src/manifest.ts --outdir dist --target=bun --external @sinclair/typebox && tsc -p tsconfig.build.json && absolute-manifest emit",
     "check:package": "bun run format && bun run typecheck && bun run test && bun run build && absolute-changelog check",
