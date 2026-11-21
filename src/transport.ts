@@ -1,35 +1,54 @@
 import { isIP } from "node:net";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
-/** Shared conservative public-address classifier; caller retains destination policy. */
-export const isPublicNetworkAddress = (input: string): boolean => {
+/** Stable policy rules for diagnostics; never returns the supplied address. */
+export const networkAddressBlockReason = (
+  input: string,
+): string | undefined => {
   const value = input.toLowerCase().replace(/^\[|\]$/gu, "");
   if (isIP(value) === 4) {
     const [a = 0, b = 0, c = 0] = value.split(".").map(Number);
-    return !(
-      a === 0 ||
+    if (a === 0) return "ipv4_this_network";
+    if (
       a === 10 ||
-      a === 127 ||
-      a >= 224 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
       (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && (b === 168 || b === 0 || (b === 88 && c === 99))) ||
-      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 192 && b === 168)
+    )
+      return "ipv4_private";
+    if (a === 127) return "ipv4_loopback";
+    if (a >= 224) return "ipv4_multicast_reserved";
+    if (a === 100 && b >= 64 && b <= 127) return "ipv4_shared";
+    if (a === 169 && b === 254) return "ipv4_link_local";
+    // IANA reserves these /24s, not the entire public 192.0.0.0/16.
+    // Keep the conservative protocol-assignment policy, including anycast exceptions.
+    if (a === 192 && b === 0 && c === 0) return "ipv4_protocol_assignment";
+    if (
+      (a === 192 && b === 0 && c === 2) ||
+      (a === 198 && b === 51 && c === 100) ||
       (a === 203 && b === 0 && c === 113)
-    );
+    )
+      return "ipv4_documentation";
+    if (a === 192 && b === 88 && c === 99) return "ipv4_transition";
+    if (a === 198 && (b === 18 || b === 19)) return "ipv4_benchmark";
+    return undefined;
   }
-  // Reject mapped, transition, local, multicast and documentation addresses.
-  if (isIP(value) !== 6 || !/^[23]/u.test(value)) return false;
+  if (isIP(value) !== 6) return "invalid_address";
+  if (!/^[23]/u.test(value)) return "ipv6_non_global";
   const [first, second = "0"] = value.split(":");
   const prefix = parseInt(first!, 16),
     subnet = parseInt(second || "0", 16);
-  return (
-    prefix !== 0x2002 &&
-    !(prefix === 0x2001 && (subnet < 0x200 || subnet === 0xdb8)) &&
-    !(prefix === 0x3fff && subnet < 0x1000)
-  );
+  if (prefix === 0x2002) return "ipv6_transition";
+  if (prefix === 0x2001 && subnet < 0x200) return "ipv6_special";
+  if (
+    (prefix === 0x2001 && subnet === 0xdb8) ||
+    (prefix === 0x3fff && subnet < 0x1000)
+  )
+    return "ipv6_documentation";
+  return undefined;
 };
+/** Shared conservative public-address classifier; caller retains destination policy. */
+export const isPublicNetworkAddress = (input: string): boolean =>
+  networkAddressBlockReason(input) === undefined;
 export const pinnedPublicRequest = async (
   request: Request,
   options: {

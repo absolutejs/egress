@@ -159,3 +159,24 @@ test("real HTTP parser accepts normal large headers and rejects responses over t
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("public 192.0 neighbors remain usable while reserved /24 boundaries stay blocked", () => {
+  for (const ip of [
+    "192.0.1.0",
+    "192.0.1.255",
+    "192.0.3.0",
+    "192.0.78.24",
+    "192.0.78.25",
+    "192.0.255.255",
+  ])
+    expect(isPublicNetworkAddress(ip)).toBe(true);
+  for (const ip of [
+    "192.0.0.0",
+    "192.0.0.255",
+    "192.0.2.0",
+    "192.0.2.255",
+    "192.168.0.1",
+    "192.88.99.1",
+  ])
+    expect(isPublicNetworkAddress(ip)).toBe(false);
+});

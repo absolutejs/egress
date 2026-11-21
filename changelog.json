@@ -6,6 +6,16 @@
 			"changes": [
 				{
 					"kind": "fixed",
+					"summary": "Allow public 192.0 addresses while retaining reserved /24 protections and expose content-free address policy reasons."
+				}
+			],
+			"date": "2026-11-21",
+			"version": "0.3.3"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
 					"summary": "Accept legitimate larger HTTP response headers with an explicit configurable 64 KiB default and 1 MiB maximum, preserving DNS pinning, TLS verification and body limits.",
 					"symbols": [
 						"pinnedPublicRequest"
